@@ -4,7 +4,9 @@ import cv2
 from point_conversion import PI, inv_PI
 import random
 import math
+from scipy.ndimage import convolve
 
+# Week 1
 def compute_camera_matrix(f, dx, dy, alpha=1, beta=1):
     """ Compute the camera matrix """
     A = np.matrix([[f, f*beta, dx],
@@ -33,6 +35,7 @@ def test2():
     q = np.array([0.35, 0.17, 1.01, 1]).reshape(4, 1)
     print(PI(P @ q))
 
+# Week 8
 def find_SIFT_keypoints_descriptors(im1, im2):
     """ Grayscaling the images im1 & im2, and compute the keypoints and descriptors between them """
     sift = cv2.SIFT_create()
@@ -94,6 +97,7 @@ def test3():
         plt.imshow(d)
         plt.show()
 
+# Week 2
 def convert_line_to_homogeneous_coordinates(a, b, c):
     """ Convert a line on the form ax + by = c to homogeneous coordinates """
     return np.array([a, b, -c]).reshape((3,1))
@@ -182,7 +186,7 @@ def hest_linear(Q1, Q2):
     return V_T[-1].reshape((3,3), order='F')
 
 def normalize_points(pts):
-    """ Normalize a set of 2D homogeneous points so they have mean 0 and std 1 """
+    """ Normalize a set of 2D inhomogeneous points so they have mean 0 and std 1 """
 
     mean = np.mean(pts, axis=1)
     std = np.std(pts, axis=1)
@@ -208,5 +212,165 @@ def test5():
     scale = H[0,0] / H_est[0,0]
     print(np.round(H_est * (scale)))
 
-    normalize_points(P)
-test5()
+    T, S = normalize_points(inv_PI(P))
+#test5()
+
+# Week 4
+def pest(Q, q):
+    """ Estimates the projection matrix given the original and projected 3D points """
+    n = len(Q[0, :])
+
+    for i in range(n):
+        x_i = q[0, i]
+        y_i = q[1, i]
+        X_i = Q[0, i]
+        Y_i = Q[1, i]
+        Z_i = Q[2, i]
+
+        B_i = np.array([[0, -X_i, X_i*y_i, 0, -Y_i, Y_i*y_i, 0, -Z_i, Z_i*y_i, 0, -1, y_i],
+                        [X_i, 0, -X_i*x_i, Y_i, 0, -Y_i*x_i, Z_i, 0, -Z_i*x_i, 1, 0, -x_i],
+                        [-X_i*y_i, X_i*x_i, 0, -Y_i*y_i, Y_i*x_i, 0, -Z_i*y_i, Z_i*x_i, 0, -y_i, x_i, 0]])
+        
+    _, _, v_T = np.linalg.svd(B_i)
+
+    P_est = v_T[-1].reshape((3,4), order='F')
+
+    return P_est
+
+def estimateHomographies(Q, qs):
+    """ Estimate homographies given a set of 3D points and the projection into the image plane from different views
+        Args: 
+            Q_omega: array of original un-transformed points
+            qs: list of arrays of projected points
+    """
+    
+    homographies = []
+    n = len(Q[0])
+
+    for q in qs:
+        H = hest_linear(Q, q)
+        homographies.append(H)
+    return homographies
+
+# week 6
+def gaussian1DKernel(sigma):
+    length = int(6 * sigma)  # Length of the Gaussian kernel
+    size = length // 2  # Half the length for symmetric kernel
+    x = np.linspace(-size, size, length)  # Generate an array of x values
+
+    g = np.exp(-x**2 / (2 * sigma**2))  # Gaussian kernel
+    g /= np.sum(g)  # Normalize the Gaussian kernel to sum to 1
+
+    gd = -(x / sigma**2) * g  # Derivative of the Gaussian kernel
+    return g, gd
+
+def gaussianSmoothing(im, sigma):
+    im_gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY) # Convert image to single channel (greyscale)
+    im = im.astype(float)  # Convert image to floating point
+
+    g, gd = gaussian1DKernel(sigma)  # Generate 1D Gaussian kernel and its derivative
+    # Apply 1D smoothing in the x-direction
+    Ix = convolve(im_gray.flatten(), g, mode='nearest')
+    Ix = convolve(Ix, gd, mode='nearest' )
+
+    # Apply 1D smoothing in the y-direction
+    Iy = convolve(im_gray.flatten(), g, mode='nearest')
+    Iy = convolve(Iy, gd, mode='nearest')
+
+    # Apply 2D smoothing
+    I = convolve(im_gray, g[:, np.newaxis])
+    I = convolve(I, g[np.newaxis, :])
+
+    return I, Ix.reshape((I.shape[0], I.shape[1])), Iy.reshape((I.shape[0], I.shape[1]))
+
+def smoothedHessian(im, sigma, epsilon):
+    I, Ix, Iy = gaussianSmoothing(im, sigma)  # Compute smoothed image and derivatives
+
+    g, _ = gaussian1DKernel(sigma)  # Generate 1D Gaussian kernel
+    g_epsilon, _ = gaussian1DKernel(epsilon)  # Generate 1D Gaussian kernel with epsilon
+
+    # Compute elements of the smoothed Hessian matrix
+    Ix2 = Ix**2
+    Iy2 = Iy**2
+    IxIy = Ix * Iy
+
+    # Apply Gaussian smoothing with epsilon to the elements of the Hessian matrix
+    C = np.empty((300, 300, 4))
+    
+    C[:, :, 0] = convolve(Ix2.flatten(), g_epsilon, mode='nearest').reshape((I.shape[0], I.shape[1]))
+    C[:, :, 1] = convolve(IxIy.flatten(), g_epsilon, mode='nearest').reshape((I.shape[0], I.shape[1]))
+    C[:, :, 2] = convolve(IxIy.flatten(), g_epsilon, mode='nearest').reshape((I.shape[0], I.shape[1]))
+    C[:, :, 3] = convolve(Iy2.flatten(), g_epsilon, mode='nearest').reshape((I.shape[0], I.shape[1]))
+   
+    return C
+
+def harrisMeasure(im, sigma, epsilon, k):
+    C = smoothedHessian(im, sigma, epsilon)
+
+    a = C[:, :, 0]
+    b = C[:, :, 3]
+    c = C[:, :, 1]
+
+    r = a * b - c**2 - k * ((a+b)**2)
+    return r
+
+def cornerDetector(im, sigma, epsilon, k, tau): # Does not work :(
+    r = harrisMeasure(im, sigma, epsilon, k)
+    c = []
+
+    for x in range(1, r.shape[0] - 1):
+        for y in range(1, r.shape[1] - 1):
+           # if #r[x,y] > tau and \
+            if r[x, y] > tau and \
+                r[x + 1, y] and \
+                r[x,y] >= r[x - 1, y] and \
+                r[x,y] > r[x, y + 1] and \
+                r[x,y] <= r[x, y - 1]:
+                c.append([x,y])
+
+    return c
+
+
+def test_gaussian():
+    im = cv2.imread('week06_data/TestIm1.png')
+    
+    c = cornerDetector(im, 2, 3, 0.06, -1)
+    for i, c_i in enumerate(c):
+        if i > 1:
+            break
+        print(c_i)
+        plt.plot(c_i, marker="+")
+    plt.imshow(im)
+    plt.show()
+#test_gaussian()
+
+def canny_edge_detection(im1, im2):
+    """ Detecting the edges in both im1 and im2 using Canny edge detection """
+    # Grayscaling the images
+    im1 = cv2.cvtColor(im1, cv2.COLOR_BGR2GRAY)
+    im2 = cv2.cvtColor(im2, cv2.COLOR_BGR2GRAY)
+
+    # Computing min and max values in both im1 and im2
+    im1_min = np.min(im1)
+    im1_max = np.max(im1)
+    im2_min = np.min(im2)
+    im2_max = np.max(im2)
+
+    # Computing the edges
+    im1_edges = cv2.Canny(im1, im1_min, im1_max)
+    im2_edges = cv2.Canny(im2, im2_min, im2_max)
+    return im1_edges, im2_edges
+
+def test_canny_edge_detection():
+    im1 = cv2.imread('week06_data/TestIm1.png')
+    im2 = cv2.imread('week06_data/TestIm2.png')
+
+    im1_edges, im2_edges = canny_edge_detection(im1, im2)
+
+    plt.subplot(121),plt.imshow(im1_edges,cmap = 'gray')
+    plt.title('Image1 Edges'), plt.xticks([]), plt.yticks([])
+    plt.subplot(122),plt.imshow(im2_edges,cmap = 'gray')
+    plt.title('Image2 Edges'), plt.xticks([]), plt.yticks([])
+    plt.show()
+
+#test_canny_edge_detection()
