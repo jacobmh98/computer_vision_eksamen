@@ -877,7 +877,7 @@ def ransac_algorithm(P,N):
     return models[best_model_i]
 
 N = 1
-ransac_algorithm(P, N)
+#ransac_algorithm(P, N)
 
 test_data = np.array([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
                       [194, 192, 181, 172, 173, 173, 184, 173, 170, 1.81, 170, 192]])
@@ -985,3 +985,34 @@ def compute_sampsons_distance(F, q1i, q2i):
     return d_samp
 
 
+# Harris Corner Detection Exam 
+
+def harris_corner_detection(a,b,c, k):
+    """ Compute the coordinates of a """
+    r = a * b - (c**2) - k * ((a + b)**2) # Computing the r matrix
+
+    # Computing the threshold
+    c = 0.8 # Can range from 0.1 to 0.8
+    tau = c * np.max(r) 
+
+    # Finding the Harris corners using tau and Non-Maximum Suppression (inside if statement)
+    for x in range(0, r.shape[0]):
+        for y in range(1, r.shape[1]-1):
+            if r[x,y] > tau and \
+                x+1 < r.shape[0] and r[x,y] > r[x+1,y] and \
+                x - 1 >= 0 and r[x,y] >= r[x-1,y] and \
+                y + 1 < r.shape[1] and r[x,y] > r[x,y+1] and \
+                y - 1 >= 0 and r[x,y] >= r[x,y-1]:
+                print('Corner: (x,y) = (' + str(x) + ', ' + str(y) +')')
+
+
+
+def test_harris_corner_detection():
+    data = np.load("harris.npy", allow_pickle=True).item()
+    a = data['g*(I_x^2)']
+    b = data['g*(I_y^2)']
+    c = data['g*(I_x I_y)']
+    k = 0.06
+
+    harris_corner_detection(a,b,c,k)
+test_harris_corner_detection()
