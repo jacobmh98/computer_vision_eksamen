@@ -47,7 +47,6 @@ def test_convert_line_to_homogeneous_coordinates():
     hom_line = convert_line_to_homogeneous_coordinates(a, b, c)
     print(hom_line)
 
-
 def determine_if_point_on_line(l, p):
     """ Determine if a point is on a line in homogeneous coordinates """
     print(l @ p) # Just to see the result
@@ -481,6 +480,68 @@ def estimateHomographies(Q, qs):
         H = hest_linear(Q, q)
         homographies.append(H)
     return homographies
+
+
+# Week 5
+def compute_residuals(Q,P): # It should work, no promises
+    """ Computes the residuals as a vector
+    Takes the parameters we want to optimize (Q)
+    The residuals are the difference in projection
+    P is the list of different projection matrices where the point Q is projected"""
+    residuals = []
+    Qs = []
+    
+    for i in range(len(P)):
+        qi = PI(P[i] @ inv_PI(Q))
+        qih = qi + np.array([[1], [-1]])
+        residual_i = PI(P[i] @ inv_PI(Q)) - qih
+        residuals.append(residual_i)
+
+    return np.concatenate(residuals)
+
+def test_compute_residuals():
+    Q = np.array([[1],[1],[0]])
+
+    R1 = R2 = np.identity(3)
+    t1 = np.array([[0],[0],[1]])
+    t2 = np.array([[0],[0],[20]])
+    K1 = K2 = np.array([[700,0,600],[0,700,400],[0,0,1]])
+
+    # Creating the Rt matrices
+    Rt1 = np.append(R1,t1,axis=1)
+    Rt2 = np.append(R2,t2,axis=1)
+    P1 = K1 @ Rt1
+    P2 = K2 @ Rt2
+    P = [P1,P2]
+
+    residuals = compute_residuals(Q,P)
+    print(residuals)
+
+def triangulate_nonlin(Q,P): # Does not work entirely. GL
+    """
+    import scipy
+    from scipy import optimize
+    """
+    Qs = []
+
+    def compute_residuals(Q):
+        residuals = []
+        
+        for i in range(len(P)):
+            qi = PI(P[i] @ inv_PI(Q))
+            Qs.append(inv_PI(qi))
+            qih = qi + np.array([[1], [-1]])
+            residual_i = PI(P[i] @ inv_PI(Q)) - qih
+            residuals.append(residual_i)
+    
+        return np.concatenate(residuals)
+    
+    #residuals = compute_residuals(Q)
+    #x0 = triangulate1(Qs, P)
+    #scipy.optimize.least_squares(residuals, x0, args=(), method='lm')
+    
+    return 0
+
 
 # week 6
 def gaussian1DKernel(sigma):
