@@ -4,6 +4,9 @@ import cv2
 from point_conversion import PI, inv_PI
 import random
 import math
+import scipy
+from scipy import optimize
+import skimage
 from scipy.ndimage import convolve
 
 # Week 1
@@ -665,6 +668,218 @@ def test_canny_edge_detection():
     plt.show()
 
 #test_canny_edge_detection()
+
+
+# Week 7
+def detect_edges(image, t_lower, t_upper):
+    """Computes the edges in the provided image with the two given thresholds"""
+    edges = cv2.Canny(im, t_lower, t_upper)
+    return edges
+
+def test_detect_edges():
+    # Image
+    image = cv2.imread("data/Box3.bmp")[:,:,::-1]
+    
+    # Thresholds
+    t_lower = 50
+    t_upper = 150
+    
+    edges = detect_edges(image, t_lower, t_upper)
+    print(edges)
+
+
+def compute_hough_space(edges):
+    """Computes the Hough space from detected edges"""
+    return skimage.transform.hough_line(edges)
+
+def test_compute_hough_space():
+    # Image
+    image = cv2.imread("data/Box3.bmp")[:,:,::-1]
+    
+    # Thresholds
+    t_lower = 50
+    t_upper = 150
+    
+    edges = detect_edges(image, t_lower, t_upper)
+    
+    hspace, angles, distances = compute_hough_space(edges)
+    #print(hspace)
+    #print(angles)
+    #print(distances)
+
+
+def visualize_hough_space(hspace, angles, distances):
+    """Visualizing the Hough space"""
+    
+    # extent is used to get the correct units on the axes
+    extent = [angles[0], angles[-1], distances[-1], distances[0]]
+    plt.imshow(hspace, extent=extent, aspect='auto')
+    plt.show()
+    
+def test_visualize_hough_space():
+    # Image
+    image = cv2.imread("data/Box3.bmp")[:,:,::-1]
+    
+    # Thresholds
+    t_lower = 50
+    t_upper = 150
+    
+    # Computing the hspace
+    edges = detect_edges(image, t_lower, t_upper)
+    hspace, angles, distances = compute_hough_space(edges)
+    
+    # Visualizing it
+    visualize_hough_space(hspace, angles, distances)
+
+
+def polar_to_cartesian(polar_coords):
+    cartesian_coords = []
+    
+    for polar_coord in polar_coords:
+        r = polar_coord[0]
+        theta = np.deg2rad(polar_coord[1])
+        x = r * np.cos(theta)
+        y = r * np.sin(theta)
+        cartesian_coords.append([x, y])
+    
+    return cartesian_coords
+
+def test_polar_to_cartesian():
+    angles = [45, 30, 60]
+    distances = [1, 2, 3]
+    
+    polar_coordinates = list(zip(distances, angles))
+    result = polar_to_cartesian(polar_coordinates)
+    print(result)
+
+
+def find_peaks(hspace, angles, distances, num_peaks):
+    """Finds the peaks in the hough space"""
+    return skimage.transform.hough_transform.hough_line_peaks(hspace, angles, dists, num_peaks)
+
+def test_find_peaks():
+    # Image
+    image = cv2.imread("data/Box3.bmp")[:,:,::-1]
+    
+    # Thresholds
+    t_lower = 50
+    t_upper = 150
+    
+    # Computing the hspace
+    edges = detect_edges(image, t_lower, t_upper)
+    hspace, angles, distances = compute_hough_space(edges)
+    
+    num_peaks = 5 # num_peaks = n
+    extH, extAngles, extDists = find_peaks(hspace, angles, distances, num_peaks)
+    
+    # Visualizing the peaks
+    # Getting the x/y coords
+    polar_coordinates = list(zip(extDists, extAngles))
+    cartesian_coordinates = polar_to_cartesian(polar_coordinates)
+    print(cartesian_coordinates)
+
+
+def line_from_points(p1,p2):
+    """Estimate the line in homogeneous coordinates that passes through two points."""
+    # Convert points to homogeneous coordinates
+    q1 = inv_PI(p1).reshape(1, 3)[0]
+    q2 = inv_PI(p2).reshape(1, 3)[0]
+    
+    # Compute the cross product of the two points' homogeneous coordinates
+    l = np.cross(q1, q2)
+    
+    return l
+
+def test_line_from_points():
+    p1 = np.array([[1],[1]])
+    p2 = np.array([[2],[2]])
+    
+    line = line_from_points(p1, p2)
+    print(line)
+
+
+""" Exercise 7 """
+def determine_inlier_outlier(t, l, P):
+    """ Determine which points are inliers and outliers given a threshold and a line.
+     
+        Args:
+            t: threshold
+            l: line in homogeneous coordinates
+            P: list of points in inhomogeneous coordinates"""
+
+    # normalize the line in homogeneous coordinates
+    a,b,c = l / l[2]
+    mag_l = np.sqrt(a ** 2 + b ** 2)
+    l_norm = np.array([a / mag_l, b / mag_l, 1])
+
+    #print(str(np.sqrt(l_norm[0] ** 2 + l_norm[1] ** 2)) + " " + str(l_norm[2]))
+
+    inliers = []
+    outliers = []
+
+    P_h = inv_PI(P)
+
+    # foreach point in P compute its distance to l and determine if it is an inlier or outlier
+    for i in range(len(P[0])):
+        distance_to_l = np.abs(l_norm @ P_h[:, i])
+
+        #print("point " + str(i + 1) + " dist: " + str(distance_to_l))
+
+        if distance_to_l < t:
+            inliers.append(P[:, i])
+            #print("point " + str(i+1) + ": inliner")
+        else:
+            outliers.append(P[:, i])
+            #print("point " + str(i+1) + ": outlier")
+
+
+    return np.array(inliers), np.array(outliers)
+
+
+""" Exercise 8 """
+def compute_consensus(l, P):
+    """ Compute consensus i.e. number of inliers with respect to a line l. """
+    t = 30
+    inliers, _ = determine_inlier_outlier(t, l, P)
+    return len(inliers)
+
+""" Exercise 9 """
+def select_two_points(P):
+    """ Randomly selects two 2D points from P """
+
+    i = random.randint(0, len(P[0]) - 1)
+    j = random.randint(0, len(P[0]) - 1)
+
+    print("Creating model from point " + str(i + 1) + " and " + str(j + 1))
+
+    while j == i:
+        j = random.randint(0, len(P[0]) - 1)
+
+    return P[:, i], P[:, j]
+
+""" Exercise 10 """
+def ransac_algorithm(P,N):
+    """ Compute the basic Ransac algorithm """
+    consensus = []
+    models = []
+
+    for _ in range(N):
+        p1, p2 = select_two_points(P)
+        l = line_from_points(p1, p2)
+        c = compute_consensus(l, P)
+
+        consensus.append(c)
+        models.append(l)
+
+    best_model_i = np.argmin(np.array([consensus]))
+
+    return models[best_model_i]
+
+N = 1
+ransac_algorithm(P, N)
+
+test_data = np.array([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                      [194, 192, 181, 172, 173, 173, 184, 173, 170, 1.81, 170, 192]])
 
 
 # Week 8
