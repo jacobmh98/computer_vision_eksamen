@@ -605,6 +605,7 @@ def test_canny_edge_detection():
 
 #test_canny_edge_detection()
 
+# Week 7
 
 # Week 8
 def find_SIFT_keypoints_descriptors(im1, im2):
@@ -668,7 +669,43 @@ def test3():
         plt.imshow(d)
         plt.show()
 
+# Week 9
+# NONE OF THIS CODE IS TESTED
+def Fest_8point(Q1, Q2):
+    """ Computes the fundamental matrix from a set of corresponding 2D points using the 8-point algorithm """
 
+    n = Q1.shape[1] # number of corresponding points
 
+    for i in range(n):
+        # Extracting the i'th point
+        q1i = Q1[:, i]
+        q2i = Q2[:, i]
+
+        # Extracting (x,y) coordinates from q1i
+        x1i = q1i[0]
+        y1i = q1i[1]
+
+        # Extracting (x,y) coordinates from q2i
+        x2i = q2i[0]
+        y2i = q2i[1]
+        
+        # Creating the B matrix
+        if i == 0:
+            B = np.array([x1i*x2i, x1i*y2i, x1i, y1i*x2i, y1i*y2i, y1i, x2i, y2i, 1])
+        else:
+            biT = np.array([x1i*x2i, x1i*y2i, x1i, y1i*x2i, y1i*y2i, y1i, x2i, y2i, 1])
+            B = np.vstack((B, biT))
+
+    # Finding a solution to F via svd
+    _,_,Vh = np.linalg.svd(B)
+    F = Vh[-1].reshape((3,3), order='F')
+    return F
+
+def compute_sampsons_distance(F, q1i, q2i):
+    """ Compute the Sampson distance between to points given a fundamental matrix"""
+    numerator = (q2i.T @ F @ q1i)**2
+    denominator = ((F @ q1i)[0])**2 +  ((F @ q1i)[1])**2 + ((q2i.T @ F)[0])**2 + ((q2i.T @ F)[0,1])**2
+    d_samp = numerator / denominator
+    return d_samp
 
 
